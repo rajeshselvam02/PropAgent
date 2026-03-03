@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: propagent
+      POSTGRES_USER: propagent
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-propagent123}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U propagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://propagent:${DB_PASSWORD:-propagent123}@postgres:5432/propagent
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+      MASTER_API_KEY: ${MASTER_API_KEY}
+      API_KEYS: ${API_KEYS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  whatsapp:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: whatsapp
+    ports:
+      - "4001:4001"
+    environment:
+      DATABASE_URL: postgresql://propagent:${DB_PASSWORD:-propagent123}@postgres:5432/propagent
+      REDIS_URL: redis://redis:6379
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  commute:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: commute
+    ports:
+      - "4002:4002"
+    environment:
+      DATABASE_URL: postgresql://propagent:${DB_PASSWORD:-propagent123}@postgres:5432/propagent
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: analytics
+    ports:
+      - "4003:4003"
+    environment:
+      DATABASE_URL: postgresql://propagent:${DB_PASSWORD:-propagent123}@postgres:5432/propagent
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - gateway
+      - whatsapp
+      - commute
+      - analytics
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

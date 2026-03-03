@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PropAgent - Agent Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #10b981;
+            --primary-dark: #059669;
+            --hot: #ef4444;
+            --warm: #f59e0b;
+            --cold: #6b7280;
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: var(--card);
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #334155;
+        }
+        
+        .logo { font-size: 20px; font-weight: 700; }
+        .logo span { color: var(--primary); }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+        }
+        
+        .status-badge {
+            background: var(--primary);
+            color: #000;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .container { padding: 16px; max-width: 1400px; margin: 0 auto; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: var(--card);
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .hot-badge {
+            background: var(--hot);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .leads-list { display: flex; flex-direction: column; gap: 12px; }
+        
+        .lead-card {
+            background: var(--card);
+            padding: 16px;
+            border-radius: 12px;
+            border-left: 4px solid var(--cold);
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .lead-card.hot { border-left-color: var(--hot); }
+        .lead-card.warm { border-left-color: var(--warm); }
+        
+        .lead-info h3 { font-size: 16px; margin-bottom: 4px; }
+        .lead-meta { font-size: 12px; color: var(--muted); }
+        .lead-meta span { margin-right: 12px; }
+        
+        .lead-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: #000;
+        }
+        
+        .btn-primary:hover { background: var(--primary-dark); }
+        
+        .btn-secondary {
+            background: #334155;
+            color: var(--text);
+        }
+        
+        .btn-call {
+            background: #3b82f6;
+            color: #fff;
+        }
+        
+        .btn-whatsapp {
+            background: #25d366;
+            color: #fff;
+        }
+        
+        .visits-today {
+            background: var(--card);
+            padding: 16px;
+            border-radius: 12px;
+            margin-top: 24px;
+        }
+        
+        .visit-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #334155;
+        }
+        
+        .visit-item:last-child { border-bottom: none; }
+        
+        .visit-time {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+        
+        .visit-details { font-size: 12px; color: var(--muted); margin-top: 4px; }
+        
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+        
+        .tab {
+            padding: 8px 16px;
+            background: var(--card);
+            border: none;
+            border-radius: 8px;
+            color: var(--muted);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        
+        .tab.active {
+            background: var(--primary);
+            color: #000;
+        }
+        
+        .call-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .call-modal.active { display: flex; }
+        
+        .call-content {
+            background: var(--card);
+            padding: 32px;
+            border-radius: 16px;
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        .call-timer {
+            font-size: 48px;
+            font-weight: 700;
+            margin: 24px 0;
+            color: var(--primary);
+        }
+        
+        .call-status {
+            font-size: 14px;
+            color: var(--muted);
+            margin-bottom: 16px;
+        }
+        
+        .call-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 24px;
+        }
+        
+        .btn-end {
+            background: var(--hot);
+            color: #fff;
+            padding: 16px 32px;
+            font-size: 16px;
+        }
+        
+        @media (max-width: 600px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .lead-card { grid-template-columns: 1fr; }
+            .lead-actions { width: 100%; }
+            .btn { flex: 1; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">Prop<span>Agent</span></div>
+        <div class="user-info">
+            <span id="agentName">Loading...</span>
+            <span class="status-badge">Online</span>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="hotLeads">-</div>
+                <div class="stat-label">🔥 Hot Leads</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="callsPending">-</div>
+                <div class="stat-label">📞 Pending Calls</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="visitsToday">-</div>
+                <div class="stat-label">📅 Visits Today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="conversions">-</div>
+                <div class="stat-label">✅ Conversions</div>
+            </div>
+        </div>
+        
+        <div class="section-title">
+            🔥 Hot Leads <span class="hot-badge" id="hotCount">0</span>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab active" data-filter="all">All</button>
+            <button class="tab" data-filter="hot">Hot</button>
+            <button class="tab" data-filter="warm">Warm</button>
+            <button class="tab" data-filter="new">New</button>
+        </div>
+        
+        <div class="leads-list" id="leadsList">
+            <div class="empty-state">Loading leads...</div>
+        </div>
+        
+        <div class="visits-today">
+            <div class="section-title">📅 Today's Visits</div>
+            <div id="visitsList">
+                <div class="empty-state">No visits scheduled</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Call Modal -->
+    <div class="call-modal" id="callModal">
+        <div class="call-content">
+            <h2>📞 Call in Progress</h2>
+            <div class="call-status" id="callStatus">Connecting...</div>
+            <div class="call-timer" id="callTimer">00:00</div>
+            <div id="callLeadName">-</div>
+            <div class="call-actions">
+                <button class="btn btn-end" onclick="endCall()">End Call</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:4000' 
+            : `http://${window.location.hostname}:4000`;
+        
+        const ANALYTICS_BASE = API_BASE.replace(':4000', ':4003');
+        
+        let agent = null;
+        let callTimer = null;
+        let callSeconds = 0;
+        
+        // Initialize
+        async function init() {
+            // For demo, use first agent
+            const res = await fetch(`${ANALYTICS_BASE}/api/analytics/leaderboard`);
+            const data = await res.json();
+            if (data.success && data.data.length > 0) {
+                agent = data.data[0];
+                document.getElementById('agentName').textContent = agent.name;
+            } else {
+                document.getElementById('agentName').textContent = 'Demo Agent';
+            }
+            
+            loadDashboard();
+            loadLeads();
+            loadVisits();
+            
+            // Refresh every 30s
+            setInterval(loadDashboard, 30000);
+            setInterval(loadLeads, 30000);
+        }
+        
+        async function loadDashboard() {
+            try {
+                const res = await fetch(`${ANALYTICS_BASE}/api/analytics/summary`);
+                const data = await res.json();
+                
+                if (data.success) {
+                    const stats = data.data;
+                    document.getElementById('hotLeads').textContent = stats.leads.byStatus.hot || 0;
+                    document.getElementById('callsPending').textContent = stats.leads.byStatus.new || 0;
+                    document.getElementById('visitsToday').textContent = stats.visits.scheduled || 0;
+                    document.getElementById('conversions').textContent = stats.conversions.total || 0;
+                }
+            } catch (e) {
+                console.error('Failed to load dashboard:', e);
+            }
+        }
+        
+        async function loadLeads(filter = 'all') {
+            try {
+                const res = await fetch(`${API_BASE}/api/leads`);
+                const data = await res.json();
+                
+                if (data.success && data.data) {
+                    let leads = data.data;
+                    
+                    if (filter !== 'all') {
+                        leads = leads.filter(l => l.intent_class === filter || l.status === filter);
+                    }
+                    
+                    document.getElementById('hotCount').textContent = 
+                        data.data.filter(l => l.intent_class === 'hot').length;
+                    
+                    renderLeads(leads);
+                }
+            } catch (e) {
+                console.error('Failed to load leads:', e);
+                document.getElementById('leadsList').innerHTML = 
+                    '<div class="empty-state">Failed to load leads</div>';
+            }
+        }
+        
+        function renderLeads(leads) {
+            if (leads.length === 0) {
+                document.getElementById('leadsList').innerHTML = 
+                    '<div class="empty-state">No leads found</div>';
+                return;
+            }
+            
+            document.getElementById('leadsList').innerHTML = leads.map(lead => `
+                <div class="lead-card ${lead.intent_class}" data-id="${lead.id}">
+                    <div class="lead-info">
+                        <h3>${lead.name || 'Unknown'}</h3>
+                        <div class="lead-meta">
+                            <span>📱 ${lead.phone}</span>
+                            <span>📍 ${lead.preferred_location || 'N/A'}</span>
+                            <span>💰 ${lead.budget_range || 'N/A'}</span>
+                        </div>
+                        <div class="lead-meta">
+                            <span>Source: ${lead.source}</span>
+                            <span>Score: ${lead.intent_score}/100</span>
+                        </div>
+                    </div>
+                    <div class="lead-actions">
+                        <button class="btn btn-call" onclick="startCall('${lead.id}', '${lead.phone}', '${lead.name}')">
+                            📞 Call
+                        </button>
+                        <button class="btn btn-whatsapp" onclick="openWhatsApp('${lead.phone}')">
+                            💬 WhatsApp
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        async function loadVisits() {
+            try {
+                // This would need a visits endpoint in the ingestion service
+                document.getElementById('visitsList').innerHTML = 
+                    '<div class="empty-state">No visits endpoint yet</div>';
+            } catch (e) {
+                console.error('Failed to load visits:', e);
+            }
+        }
+        
+        function startCall(leadId, phone, name) {
+            document.getElementById('callLeadName').textContent = name;
+            document.getElementById('callStatus').textContent = 'Calling ' + phone;
+            document.getElementById('callModal').classList.add('active');
+            
+            callSeconds = 0;
+            callTimer = setInterval(() => {
+                callSeconds++;
+                const mins = Math.floor(callSeconds / 60).toString().padStart(2, '0');
+                const secs = (callSeconds % 60).toString().padStart(2, '0');
+                document.getElementById('callTimer').textContent = `${mins}:${secs}`;
+            }, 1000);
+            
+            // In real app, would initiate call via WhatsApp Business API or telephony
+            console.log('Starting call to:', phone);
+        }
+        
+        function endCall() {
+            clearInterval(callTimer);
+            document.getElementById('callModal').classList.remove('active');
+            
+            // Log the call
+            console.log('Call ended. Duration:', callSeconds, 'seconds');
+            
+            // In real app, would show disposition form
+            alert(`Call ended. Duration: ${Math.floor(callSeconds / 60)}m ${callSeconds % 60}s\n\nCall recorded and saved.`);
+        }
+        
+        function openWhatsApp(phone) {
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+            window.open(`https://wa.me/${cleanPhone}`, '_blank');
+        }
+        
+        // Tab filtering
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                e.target.classList.add('active');
+                loadLeads(e.target.dataset.filter);
+            });
+        });
+        
+        init();
+    </script>
+</body>
+</html>

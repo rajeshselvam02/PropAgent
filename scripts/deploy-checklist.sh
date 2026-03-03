@@ -1,0 +1,51 @@
+#!/bin/bash
+# PropAgent - Production Deployment Checklist
+
+echo "🏢 PropAgent Production Deployment Checklist"
+echo "============================================="
+
+echo ""
+echo "SECURITY CHECKLIST:"
+echo "☐ Changed all default passwords in .env.production"
+echo "☐ Set strong MASTER_API_KEY (32+ random chars)"
+echo "☐ Set strong JWT_SECRET (32+ random chars)"
+echo "☐ Set strong DATABASE password"
+echo "☐ Configured SSL certificates in ./ssl/"
+echo "☐ Enabled firewall (only 80, 443, 22 open)"
+echo "☐ Set up fail2ban for SSH"
+echo "☐ Configured PostgreSQL SSL"
+echo "☐ Restricted Redis to localhost only"
+echo ""
+
+echo "INFRASTRUCTURE:"
+echo "☐ PostgreSQL 15+ installed and running"
+echo "☐ Redis 7+ installed and running"
+echo "☐ Node.js 20+ installed"
+echo "☐ Docker & Docker Compose installed"
+echo "☐ Nginx configured with SSL"
+echo "☐ Backup strategy configured"
+echo ""
+
+echo "INTEGRATIONS:"
+echo "☐ WhatsApp Business API verified"
+echo "☐ Meta App configured with webhook"
+echo "☐ Webhook URL set in Meta dashboard"
+echo "☐ 99acres/MagicBricks API keys (if using)"
+echo ""
+
+echo "MONITORING:"
+echo "☐ Health check endpoint working"
+echo "☐ Log rotation configured"
+echo "☐ Alerts set up for service downtime"
+echo "☐ Database backup automation"
+echo ""
+
+echo "AFTER DEPLOYMENT:"
+echo "☐ Test all API endpoints"
+echo "☐ Test WhatsApp webhook"
+echo "☐ Test rate limiting"
+echo "☐ Review logs for errors"
+echo "☐ Check security headers (curl -I https://your-domain)"
+echo ""
+
+echo "Run ./build-prod.sh to build and deploy"
