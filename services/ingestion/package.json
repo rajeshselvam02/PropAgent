@@ -1,0 +1,17 @@
+{
+  "name": "@propagent/ingestion",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "fastify": "^4.25.2",
+    "dotenv": "^16.3.1",
+    "ioredis": "^5.3.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.10.6"
+  }
+}

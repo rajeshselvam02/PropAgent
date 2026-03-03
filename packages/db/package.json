@@ -1,0 +1,19 @@
+{
+  "name": "@propagent/db",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "migrate": "ts-node src/migrate.ts",
+    "seed": "ts-node src/seed.ts"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "@types/pg": "^8.10.9"
+  }
+}
