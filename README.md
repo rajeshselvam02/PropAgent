@@ -2,6 +2,24 @@
 
 AI-powered lead management for real estate firms in Bangalore.
 
+## Features
+
+- **Lead Ingestion**: Meta Ads, 99acres, MagicBricks, WhatsApp
+- **Lead Lifecycle**: New → Contacted → Qualified → Visit → Converted
+- **Intent Scoring**: Dynamic scoring based on budget, timeline, location
+- **Agent Assignment**: Round-robin with load balancing
+- **WhatsApp Bot**: Automated qualification flow
+- **Commute Service**: Cab booking and tracking for site visits
+- **Authentication**: JWT + Refresh tokens, multi-tenancy, PII encryption
+- **Analytics**: Real-time dashboard, agent leaderboard, source ROI
+
+## Tech Stack
+
+- **Backend**: Node.js, TypeScript, Fastify
+- **Database**: PostgreSQL
+- **Cache**: Redis
+- **Auth**: JWT, bcrypt, AES-256-GCM
+
 ## Quick Start
 
 ```bash
