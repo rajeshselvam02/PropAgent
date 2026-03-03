@@ -249,16 +249,34 @@ async function migrate() {
       UNIQUE(date, project_id, agent_id)
     );
 
-    -- Indexes
-    CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone);
-    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
-    CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(source);
-    CREATE INDEX IF NOT EXISTS idx_leads_assigned_agent ON leads(assigned_agent_id);
-    CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_visits_scheduled ON site_visits(scheduled_at);
-    CREATE INDEX IF NOT EXISTS idx_visits_lead ON site_visits(lead_id);
-    CREATE INDEX IF NOT EXISTS idx_commute_status ON commute_requests(status);
-    CREATE INDEX IF NOT EXISTS idx_meta_campaign ON leads(meta_campaign_id);
+    -- Follow-up tracking
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS follow_up_count INTEGER DEFAULT 0;
+    
+    -- Conversion tracking
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS deal_value DECIMAL(15, 2);
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS converted_at TIMESTAMP;
+    
+    -- Indexes for new queries
+    CREATE INDEX IF NOT EXISTS idx_leads_follow_up ON leads(next_follow_up_at);
+    CREATE INDEX IF NOT EXISTS idx_leads_intent_class ON leads(intent_class);
+    CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(active);
+    
+    -- Function to increment follow-up count
+    CREATE OR REPLACE FUNCTION increment_follow_up()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.follow_up_count := OLD.follow_up_count + 1;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    
+    -- Trigger
+    DROP TRIGGER IF EXISTS trigger_increment_follow_up ON leads;
+    CREATE TRIGGER trigger_increment_follow_up
+    BEFORE UPDATE OF next_follow_up_at ON leads
+    FOR EACH ROW
+    WHEN (OLD.next_follow_up_at IS DISTINCT FROM NEW.next_follow_up_at)
+    EXECUTE FUNCTION increment_follow_up();
   `);
 
   console.log('✅ Migrations complete');
