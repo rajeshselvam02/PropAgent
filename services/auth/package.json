@@ -1,0 +1,21 @@
+{
+  "name": "@propagent/auth",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "fastify": "^4.25.2",
+    "@fastify/cors": "^8.5.0",
+    "@fastify/jwt": "^7.2.4",
+    "@fastify/cookie": "^9.2.0",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.10.6",
+    "@types/bcrypt": "^5.0.2"
+  }
+}
