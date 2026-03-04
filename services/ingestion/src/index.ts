@@ -1,162 +1,449 @@
+/**
+ * Ingestion Service - Updated with Idempotency + Concurrency (Phase 2)
+ *
+ * Changes:
+ * - Idempotency middleware for POST endpoints
+ * - Optimistic concurrency for PUT endpoints
+ * - ETag/If-Match header support
+ * - Upsert logic for duplicate leads
+ */
+
 import Fastify from 'fastify';
 import dotenv from 'dotenv';
 import db from '@propagent/db';
-
+import {
+  idempotencyMiddleware,
+  createDbIdempotencyMiddleware,
+  concurrencyMiddleware,
+  concurrencyAwareGet,
+  addETagHeader,
+  executeVersionedUpdate,
+  parseIfMatch,
+  formatETag,
+  CONFLICT_CODES
+} from '@propagent/shared';
 dotenv.config();
 
 const fastify = Fastify({ logger: true });
 
+// Job queue client (import from worker)
+import { followupsQueue, whatsappQueue, emailQueue, analyticsQueue, outboxQueue } from '@propagent/worker';
+import { JOB_TYPES, QUEUE_NAMES, createOutboxEvent, DOMAIN_EVENTS } from '@propagent/worker';
+
+// Create DB-backed idempotency middleware
+const dbIdempotencyMiddleware = createDbIdempotencyMiddleware(db);
+
 // Health check
 fastify.get('/health', async () => ({ status: 'ok', service: 'ingestion' }));
 
-// Meta Lead Webhook
-fastify.post('/webhook/meta', async (req, reply) => {
+// ============================================
+// META LEAD WEBHOOK (with idempotency)
+// ============================================
+fastify.post('/webhook/meta', { preHandler: [dbIdempotencyMiddleware] }, async (req, reply) => {
   const payload = req.body as any;
-  
+
   // Parse lead data
   const fieldData = payload.entry?.[0]?.changes?.[0]?.value?.field_data || [];
   const leadData: Record<string, string> = {};
-  fieldData.forEach((f: any) => { leadData[f.name] = f.values?.[0]; });
+  fieldData.forEach((f: any) => {
+    leadData[f.name] = f.values?.[0];
+  });
 
+  // Extract tenant from meta campaign or use default
+  const tenantId = '00000000-0000-0000-0000-000000000001'; // TODO: Multi-tenant routing
+
+  // Use UPSERT to handle duplicates (by phone_hash)
   const lead = await db.query(`
-    INSERT INTO leads (name, phone, email, source, meta_campaign_id, meta_campaign_name, status)
-    VALUES ($1, $2, $3, 'meta_facebook', $4, $5, 'new')
-    RETURNING id
-  `, [leadData.full_name, leadData.phone_number, leadData.email, payload.campaign_id, payload.campaign_name]);
+    INSERT INTO leads (
+      tenant_id, name, phone, email, source,
+      meta_campaign_id, meta_campaign_name, meta_adset_id, meta_ad_id,
+      status, version
+    ) VALUES ($1, $2, $3, $4, 'meta_facebook', $5, $6, $7, $8, 'new', 0)
+    ON CONFLICT (tenant_id, phone_hash)
+      WHERE phone_hash IS NOT NULL
+    DO UPDATE SET
+      name = COALESCE(EXCLUDED.name, leads.name),
+      email = COALESCE(EXCLUDED.email, leads.email),
+      meta_campaign_id = COALESCE(EXCLUDED.meta_campaign_id, leads.meta_campaign_id),
+      meta_campaign_name = COALESCE(EXCLUDED.meta_campaign_name, leads.meta_campaign_name),
+      meta_adset_id = COALESCE(EXCLUDED.meta_adset_id, leads.meta_adset_id),
+      meta_ad_id = COALESCE(EXCLUDED.meta_ad_id, leads.meta_ad_id),
+      updated_at = NOW(),
+      version = leads.version + 1
+    RETURNING id, tenant_id, version
+  `, [
+    tenantId,
+    leadData.full_name,
+    leadData.phone_number,
+    leadData.email,
+    payload.campaign_id,
+    payload.campaign_name,
+    payload.adset_id,
+    payload.ad_id,
+  ]);
 
-  // TODO: Publish to Redis for WhatsApp service
-  // TODO: Send WhatsApp welcome message
+  const newLead = lead.rows[0];
 
-  reply.send({ success: true, leadId: lead.rows[0].id });
+  // Emit lead.created event via outbox
+  await createOutboxEvent({
+    tenantId: newLead.tenant_id,
+    eventType: DOMAIN_EVENTS.LEAD_CREATED,
+    entityType: 'lead',
+    entityId: newLead.id,
+    payload: {
+      name: leadData.full_name,
+      phone: leadData.phone_number,
+      source: 'meta_facebook',
+      campaign: payload.campaign_name,
+    },
+  });
+
+  // Queue WhatsApp welcome message
+  await whatsappQueue.add(JOB_TYPES.WHATSAPP_SEND, {
+    leadId: newLead.id,
+    tenantId: newLead.tenant_id,
+    to: leadData.phone_number,
+    message: `Hi ${leadData.full_name || 'there'}! 👋 Thanks for your interest. I'll help you find your perfect property. Quick question - what's your budget range?`,
+  });
+
+  // Queue outbox publisher
+  await outboxQueue.add(JOB_TYPES.OUTBOX_PUBLISH, { eventId: newLead.id });
+
+  // Return response with version info
+  reply.header('ETag', formatETag(newLead.version));
+  reply.send({ success: true, leadId: newLead.id, version: newLead.version });
 });
 
-// 99acres/MagicBricks Webhook
-fastify.post('/webhook/:source', async (req, reply) => {
+// ============================================
+// 99ACRES/MAGICBRICKS WEBHOOK (with idempotency)
+// ============================================
+fastify.post('/webhook/:source', { preHandler: [dbIdempotencyMiddleware] }, async (req, reply) => {
   const { source } = req.params as { source: string };
   const payload = req.body as any;
+  const tenantId = '00000000-0000-0000-0000-000000000001';
 
   const lead = await db.query(`
-    INSERT INTO leads (name, phone, email, source, project_interest, status)
-    VALUES ($1, $2, $3, $4, $5, 'new')
-    RETURNING id
-  `, [payload.name, payload.phone, payload.email, source, payload.project]);
+    INSERT INTO leads (
+      tenant_id, name, phone, email, source, project_interest, status, version
+    ) VALUES ($1, $2, $3, $4, $5, $6, 'new', 0)
+    ON CONFLICT (tenant_id, phone_hash)
+      WHERE phone_hash IS NOT NULL
+    DO UPDATE SET
+      name = COALESCE(EXCLUDED.name, leads.name),
+      email = COALESCE(EXCLUDED.email, leads.email),
+      project_interest = COALESCE(EXCLUDED.project_interest, leads.project_interest),
+      updated_at = NOW(),
+      version = leads.version + 1
+    RETURNING id, tenant_id, version
+  `, [tenantId, payload.name, payload.phone, payload.email, source, payload.project]);
 
-  reply.send({ success: true, leadId: lead.rows[0].id });
+  const newLead = lead.rows[0];
+
+  // Emit event
+  await createOutboxEvent({
+    tenantId: newLead.tenant_id,
+    eventType: DOMAIN_EVENTS.LEAD_CREATED,
+    entityType: 'lead',
+    entityId: newLead.id,
+    payload: { name: payload.name, source },
+  });
+
+  // Queue welcome
+  await whatsappQueue.add(JOB_TYPES.WHATSAPP_SEND, {
+    leadId: newLead.id,
+    tenantId: newLead.tenant_id,
+    to: payload.phone,
+    message: `Hi ${payload.name}! Thanks for inquiring about ${payload.project || 'our properties'}. Let me help you find the perfect match.`,
+  });
+
+  await outboxQueue.add(JOB_TYPES.OUTBOX_PUBLISH, { eventId: newLead.id });
+
+  reply.header('ETag', formatETag(newLead.version));
+  reply.send({ success: true, leadId: newLead.id, version: newLead.version });
 });
 
-// Manual Lead Entry
-fastify.post('/api/leads', async (req, reply) => {
-  const { name, phone, email, source, project_interest } = req.body as any;
-  
+// ============================================
+// MANUAL LEAD ENTRY (with idempotency)
+// ============================================
+fastify.post('/api/leads', { preHandler: [dbIdempotencyMiddleware] }, async (req, reply) => {
+  const { name, phone, email, source, project_interest, tenant_id } = req.body as any;
+  const tenantId = tenant_id || '00000000-0000-0000-0000-000000000001';
+
   const lead = await db.query(`
-    INSERT INTO leads (name, phone, email, source, project_interest, status)
-    VALUES ($1, $2, $3, $4, $5, 'new')
+    INSERT INTO leads (
+      tenant_id, name, phone, email, source, project_interest, status, version
+    ) VALUES ($1, $2, $3, $4, $5, $6, 'new', 0)
+    ON CONFLICT (tenant_id, phone_hash)
+      WHERE phone_hash IS NOT NULL
+    DO UPDATE SET
+      name = COALESCE(EXCLUDED.name, leads.name),
+      email = COALESCE(EXCLUDED.email, leads.email),
+      source = COALESCE(EXCLUDED.source, leads.source),
+      project_interest = COALESCE(EXCLUDED.project_interest, leads.project_interest),
+      updated_at = NOW(),
+      version = leads.version + 1
     RETURNING *
-  `, [name, phone, email, source || 'walk_in', project_interest]);
+  `, [tenantId, name, phone, email, source || 'walk_in', project_interest]);
 
-  reply.send({ success: true, data: lead.rows[0] });
+  const newLead = lead.rows[0];
+
+  // Emit event
+  await createOutboxEvent({
+    tenantId,
+    eventType: DOMAIN_EVENTS.LEAD_CREATED,
+    entityType: 'lead',
+    entityId: newLead.id,
+    payload: { name, source: source || 'walk_in' },
+  });
+
+  await outboxQueue.add(JOB_TYPES.OUTBOX_PUBLISH, { eventId: newLead.id });
+
+  reply.header('ETag', formatETag(newLead.version));
+  reply.send({ success: true, data: newLead });
 });
 
-// Lead Lifecycle Endpoints
+// ============================================
+// GET LEAD (with ETag)
+// ============================================
+fastify.get('/api/leads/:id', async (req, reply) => {
+  const { id } = req.params as any;
+  const tenantId = '00000000-0000-0000-0000-000000000001'; // TODO: from auth
 
-// Mark lead as contacted
+  const lead = await concurrencyAwareGet(db, 'leads', id, tenantId, reply);
+
+  if (!lead) {
+    reply.code(404).send({ error: 'Lead not found' });
+    return;
+  }
+
+  reply.send({ success: true, data: lead });
+});
+
+// ============================================
+// MARK LEAD AS CONTACTED (with concurrency)
+// ============================================
 fastify.put('/api/leads/:id/contacted', async (req, reply) => {
   const { id } = req.params as any;
-  const { agent_id, notes } = req.body as any;
-  
-  const result = await db.query(`
-    UPDATE leads 
-    SET status = 'contacted', 
-        last_contacted_at = NOW(),
-        status_updated_at = NOW(),
-        assigned_agent_id = COALESCE($1, assigned_agent_id)
-    WHERE id = $2
-    RETURNING *
-  `, [agent_id, id]);
-  
+  const { agent_id, notes, version } = req.body as any;
+
+  // Validate If-Match header
+  const ifMatch = req.headers['if-match'];
+  if (!ifMatch) {
+    reply.code(428).send({ error: 'If-Match header required', code: 'MISSING_IF_MATCH' });
+    return;
+  }
+
+  const expectedVersion = parseIfMatch(ifMatch as string);
+  if (expectedVersion === null) {
+    reply.code(400).send({ error: 'Invalid If-Match header', code: 'INVALID_IF_MATCH' });
+    return;
+  }
+
+  const tenantId = '00000000-0000-0000-0000-000000000001';
+
+  // Versioned update
+  const result = await executeVersionedUpdate(
+    db,
+    'leads',
+    id,
+    tenantId,
+    expectedVersion,
+    {
+      status: 'contacted',
+      last_contacted_at: 'NOW()',
+      status_updated_at: 'NOW()',
+      assigned_agent_id: agent_id || null
+    }
+  );
+
+  if (result.conflict) {
+    reply.code(409).send({
+      error: 'Lead was modified by another request',
+      code: CONFLICT_CODES.VERSION_MISMATCH,
+      hint: 'Fetch the latest version and retry'
+    });
+    return;
+  }
+
+  if (!result.success) {
+    reply.code(404).send({ error: 'Lead not found' });
+    return;
+  }
+
+  const lead = result.data!;
+
   // Log interaction
   await db.query(`
     INSERT INTO interactions (lead_id, agent_id, type, summary)
     VALUES ($1, $2, 'call', $3)
   `, [id, agent_id, notes || 'Lead contacted']);
-  
-  reply.send({ success: true, data: result.rows[0] });
+
+  // Emit event
+  await createOutboxEvent({
+    tenantId: lead.tenant_id,
+    eventType: DOMAIN_EVENTS.LEAD_STATUS_CHANGED,
+    entityType: 'lead',
+    entityId: id,
+    actorUserId: agent_id,
+    payload: { from: 'new', to: 'contacted' },
+  });
+
+  await outboxQueue.add(JOB_TYPES.OUTBOX_PUBLISH, { eventId: id });
+
+  reply.header('ETag', formatETag(lead.version));
+  reply.send({ success: true, data: lead });
 });
 
-// Update lead status
+// ============================================
+// UPDATE LEAD STATUS (with concurrency)
+// ============================================
 fastify.put('/api/leads/:id/status', async (req, reply) => {
   const { id } = req.params as any;
-  const { status, notes } = req.body as any;
-  
+  const { status, notes, agent_id } = req.body as any;
+
   const validStatuses = ['new', 'contacted', 'qualified', 'visit_scheduled', 'visit_completed', 'converted', 'lost'];
   if (!validStatuses.includes(status)) {
     reply.code(400).send({ error: 'Invalid status' });
     return;
   }
-  
+
+  // Validate If-Match header
+  const ifMatch = req.headers['if-match'];
+  if (!ifMatch) {
+    reply.code(428).send({ error: 'If-Match header required', code: 'MISSING_IF_MATCH' });
+    return;
+  }
+
+  const expectedVersion = parseIfMatch(ifMatch as string);
+  if (expectedVersion === null) {
+    reply.code(400).send({ error: 'Invalid If-Match header', code: 'INVALID_IF_MATCH' });
+    return;
+  }
+
+  // Get current status
+  const current = await db.query('SELECT status, tenant_id, version FROM leads WHERE id = $1', [id]);
+  if (current.rows.length === 0) {
+    reply.code(404).send({ error: 'Lead not found' });
+    return;
+  }
+
+  // Check version
+  if (current.rows[0].version !== expectedVersion) {
+    reply.code(409).send({
+      error: 'Lead was modified by another request',
+      code: CONFLICT_CODES.VERSION_MISMATCH,
+      currentVersion: current.rows[0].version,
+      expectedVersion,
+    });
+    return;
+  }
+
+  const oldStatus = current.rows[0].status;
+  const tenantId = current.rows[0].tenant_id;
+
   const result = await db.query(`
-    UPDATE leads 
-    SET status = $1, status_updated_at = NOW()
-    WHERE id = $2
+    UPDATE leads
+    SET status = $1, status_updated_at = NOW(), version = version + 1
+    WHERE id = $2 AND version = $3
     RETURNING *
-  `, [status, id]);
-  
-  reply.send({ success: true, data: result.rows[0] });
+  `, [status, id, expectedVersion]);
+
+  if (result.rows.length === 0) {
+    reply.code(409).send({ error: 'Concurrent modification detected', code: CONFLICT_CODES.VERSION_MISMATCH });
+    return;
+  }
+
+  const lead = result.rows[0];
+
+  // Log interaction
+  await db.query(`
+    INSERT INTO interactions (lead_id, agent_id, type, summary)
+    VALUES ($1, $2, 'status_change', $3)
+  `, [id, agent_id, `Status changed from ${oldStatus} to ${status}. ${notes || ''}`]);
+
+  // Emit event
+  await createOutboxEvent({
+    tenantId,
+    eventType: DOMAIN_EVENTS.LEAD_STATUS_CHANGED,
+    entityType: 'lead',
+    entityId: id,
+    actorUserId: agent_id,
+    payload: { from: oldStatus, to: status },
+  });
+
+  await outboxQueue.add(JOB_TYPES.OUTBOX_PUBLISH, { eventId: id });
+
+  reply.header('ETag', formatETag(lead.version));
+  reply.send({ success: true, data: lead });
 });
 
-// Calculate and update intent score
-fastify.post('/api/leads/:id/calculate-score', async (req, reply) => {
+// ============================================
+// CALCULATE INTENT SCORE (with idempotency)
+// ============================================
+fastify.post('/api/leads/:id/calculate-score', { preHandler: [dbIdempotencyMiddleware] }, async (req, reply) => {
   const { id } = req.params as any;
-  
   const leadResult = await db.query('SELECT * FROM leads WHERE id = $1', [id]);
   const lead = leadResult.rows[0];
-  
+
   if (!lead) {
     reply.code(404).send({ error: 'Lead not found' });
     return;
   }
-  
+
   let score = 0;
-  
-  // Budget match (30 points)
+
+  // Budget (30 points)
   if (lead.budget_min && lead.budget_max) {
     const budget = (lead.budget_min + lead.budget_max) / 2;
     if (budget >= 5000000) score += 30;
     else if (budget >= 2000000) score += 20;
     else score += 10;
   }
-  
+
   // Timeline (25 points)
   if (lead.timeline === 'asap') score += 25;
   else if (lead.timeline === '1-3_months') score += 20;
   else if (lead.timeline === '3-6_months') score += 10;
-  
-  // Location match (20 points)
+
+  // Location (20 points)
   if (lead.preferred_location) score += 20;
-  
+
   // Purpose (15 points)
   if (lead.purpose === 'self_use') score += 15;
   else if (lead.purpose === 'investment') score += 10;
-  
+
   // Engagement (10 points)
   if (lead.last_contacted_at) score += 5;
   if (lead.email) score += 5;
-  
-  // Classify
+
   const intentClass = score >= 70 ? 'hot' : score >= 40 ? 'warm' : 'cold';
-  
+
   await db.query(`
-    UPDATE leads SET intent_score = $1, intent_class = $2 WHERE id = $3
+    UPDATE leads
+    SET intent_score = $1, intent_class = $2, version = version + 1
+    WHERE id = $3
+    RETURNING version
   `, [score, intentClass, id]);
-  
+
+  // Emit event
+  await createOutboxEvent({
+    tenantId: lead.tenant_id,
+    eventType: DOMAIN_EVENTS.LEAD_SCORE_CALCULATED,
+    entityType: 'lead',
+    entityId: id,
+    payload: { score, intentClass },
+  });
+
   reply.send({ success: true, data: { intent_score: score, intent_class: intentClass } });
 });
 
-// Auto-assign lead to agent (round-robin)
-fastify.post('/api/leads/:id/assign', async (req, reply) => {
+// ============================================
+// AUTO-ASSIGN LEAD (with idempotency)
+// ============================================
+fastify.post('/api/leads/:id/assign', { preHandler: [dbIdempotencyMiddleware] }, async (req, reply) => {
   const { id } = req.params as any;
-  
-  // Find least loaded active agent
+
+  // Find least loaded agent
   const agentResult = await db.query(`
     SELECT a.id, a.name, COUNT(l.id) as lead_count
     FROM agents a
@@ -166,27 +453,45 @@ fastify.post('/api/leads/:id/assign', async (req, reply) => {
     ORDER BY lead_count ASC, RANDOM()
     LIMIT 1
   `);
-  
+
   if (agentResult.rows.length === 0) {
     reply.code(400).send({ error: 'No active agents available' });
     return;
   }
-  
+
   const agent = agentResult.rows[0];
-  
-  await db.query(`
-    UPDATE leads 
-    SET assigned_agent_id = $1, assigned_at = NOW()
+
+  const result = await db.query(`
+    UPDATE leads
+    SET assigned_agent_id = $1, assigned_at = NOW(), version = version + 1
     WHERE id = $2
+    RETURNING tenant_id, version
   `, [agent.id, id]);
-  
+
+  const tenantId = result.rows[0]?.tenant_id;
+
+  // Emit event
+  if (tenantId) {
+    await createOutboxEvent({
+      tenantId,
+      eventType: DOMAIN_EVENTS.LEAD_ASSIGNED,
+      entityType: 'lead',
+      entityId: id,
+      payload: { agentId: agent.id, agentName: agent.name },
+    });
+
+    await outboxQueue.add(JOB_TYPES.OUTBOX_PUBLISH, { eventId: id });
+  }
+
   reply.send({ success: true, data: { agent_id: agent.id, agent_name: agent.name } });
 });
 
-// Get leads sorted by priority
+// ============================================
+// GET LEADS (with pagination)
+// ============================================
 fastify.get('/api/leads', async (req, reply) => {
-  const { status, agent_id, limit = 50, offset = 0 } = req.query as any;
-  
+  const { status, agent_id, tenant_id, limit = 50, offset = 0 } = req.query as any;
+
   let query = `
     SELECT l.*, a.name as agent_name, p.name as project_name
     FROM leads l
@@ -195,69 +500,81 @@ fastify.get('/api/leads', async (req, reply) => {
     WHERE 1=1
   `;
   const params: any[] = [];
-  
+
+  if (tenant_id) {
+    params.push(tenant_id);
+    query += ` AND l.tenant_id = $${params.length}`;
+  }
+
   if (status) {
     params.push(status);
     query += ` AND l.status = $${params.length}`;
   }
-  
+
   if (agent_id) {
     params.push(agent_id);
     query += ` AND l.assigned_agent_id = $${params.length}`;
   }
-  
-  // Sort by intent_class priority, then by created_at DESC
+
   query += `
-    ORDER BY 
-      CASE l.intent_class 
-        WHEN 'hot' THEN 1 
-        WHEN 'warm' THEN 2 
-        WHEN 'cold' THEN 3 
-      END,
-      l.created_at DESC
+    ORDER BY CASE l.intent_class WHEN 'hot' THEN 1 WHEN 'warm' THEN 2 ELSE 3 END, l.created_at DESC
     LIMIT $${params.length + 1} OFFSET $${params.length + 2}
   `;
-  
+
   params.push(limit, offset);
-  
+
   const result = await db.query(query, params);
-  
-  // Get total count
-  const countResult = await db.query(`SELECT COUNT(*) FROM leads WHERE 1=1`);
-  
-  reply.send({ 
-    success: true, 
-    data: result.rows,
-    pagination: {
-      total: countResult.rows[0].count,
-      limit,
-      offset
-    }
-  });
+
+  reply.send({ success: true, data: result.rows, pagination: { limit, offset } });
 });
 
-// Schedule follow-up
-fastify.post('/api/leads/:id/follow-up', async (req, reply) => {
+// ============================================
+// SCHEDULE FOLLOW-UP
+// ============================================
+fastify.post('/api/leads/:id/follow-up', { preHandler: [dbIdempotencyMiddleware] }, async (req, reply) => {
   const { id } = req.params as any;
-  const { scheduled_at, notes } = req.body as any;
-  
-  const result = await db.query(`
-    UPDATE leads 
-    SET next_follow_up_at = $1
+  const { scheduled_at, notes, agent_id } = req.body as any;
+
+  await db.query(`
+    UPDATE leads
+    SET next_follow_up_at = $1, version = version + 1
     WHERE id = $2
-    RETURNING *
   `, [scheduled_at, id]);
-  
-  // Log
+
   await db.query(`
     INSERT INTO interactions (lead_id, type, summary)
     VALUES ($1, 'note', $2)
   `, [id, `Follow-up scheduled for ${scheduled_at}. ${notes || ''}`]);
-  
-  reply.send({ success: true, data: result.rows[0] });
+
+  // Queue follow-up reminder job (delayed)
+  const delay = new Date(scheduled_at).getTime() - Date.now();
+  if (delay > 0) {
+    await followupsQueue.add(JOB_TYPES.FOLLOWUP_REMIND, {
+      leadId: id,
+      tenantId: '00000000-0000-0000-0000-000000000001', // TODO: get from lead
+      followupId: `fu-${id}-${Date.now()}`,
+    }, { delay });
+  }
+
+  // Get lead for tenant
+  const leadResult = await db.query('SELECT tenant_id FROM leads WHERE id = $1', [id]);
+  if (leadResult.rows[0]?.tenant_id) {
+    await createOutboxEvent({
+      tenantId: leadResult.rows[0].tenant_id,
+      eventType: DOMAIN_EVENTS.FOLLOWUP_SCHEDULED,
+      entityType: 'lead',
+      entityId: id,
+      actorUserId: agent_id,
+      payload: { scheduledAt: scheduled_at },
+    });
+  }
+
+  reply.send({ success: true, message: 'Follow-up scheduled' });
 });
 
-// Get overdue follow-ups
+// ============================================
+// GET OVERDUE FOLLOW-UPS
+// ============================================
 fastify.get('/api/follow-ups/overdue', async (req, reply) => {
   const result = await db.query(`
     SELECT l.*, a.name as agent_name
@@ -267,11 +584,13 @@ fastify.get('/api/follow-ups/overdue', async (req, reply) => {
     AND l.status NOT IN ('converted', 'lost')
     ORDER BY l.next_follow_up_at ASC
   `);
-  
+
   reply.send({ success: true, data: result.rows });
 });
 
-// Start
+// ============================================
+// START SERVER
+// ============================================
 const start = async () => {
   const port = Number(process.env.INGESTION_PORT) || 4000;
   await fastify.listen({ port, host: '0.0.0.0' });

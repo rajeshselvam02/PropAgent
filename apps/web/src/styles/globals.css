@@ -1,0 +1,155 @@
+/**
+ * Global CSS
+ * 
+ * Tailwind imports + custom styles
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: 248 250 252;
+    --color-surface: 255 255 255;
+    --color-text: 15 23 42;
+    --color-muted: 100 116 139;
+    --color-primary: 37 99 235;
+    --color-primary-hover: 29 78 216;
+    --color-border: 226 232 240;
+    --color-success: 22 163 74;
+    --color-warning: 217 119 6;
+    --color-danger: 220 38 38;
+  }
+
+  body {
+    @apply bg-bg text-text antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* JetBrains Mono for data tables */
+  .font-mono-data {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  /* Card component */
+  .card {
+    @apply bg-surface rounded-md border border-border shadow-sm;
+  }
+
+  /* Button variants */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium text-sm transition-all duration-fast;
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-hover;
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface border border-border text-text hover:bg-bg;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-muted hover:bg-bg hover:text-text;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger text-white hover:bg-red-700;
+  }
+
+  /* Input styles */
+  .input {
+    @apply w-full px-3 py-2 rounded-md border border-border bg-surface text-text;
+    @apply placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Badge variants */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  .badge-hot {
+    @apply badge bg-red-100 text-red-800;
+  }
+
+  .badge-warm {
+    @apply badge bg-orange-100 text-orange-800;
+  }
+
+  .badge-cold {
+    @apply badge bg-blue-100 text-blue-800;
+  }
+
+  /* Status badges */
+  .status-new { @apply badge bg-gray-100 text-gray-800; }
+  .status-contacted { @apply badge bg-blue-100 text-blue-800; }
+  .status-qualified { @apply badge bg-purple-100 text-purple-800; }
+  .status-visit_scheduled { @apply badge bg-yellow-100 text-yellow-800; }
+  .status-visit_completed { @apply badge bg-green-100 text-green-800; }
+  .status-converted { @apply badge bg-green-100 text-green-800; }
+  .status-lost { @apply badge bg-red-100 text-red-800; }
+
+  /* Table styles */
+  .data-table {
+    @apply w-full border-collapse;
+  }
+
+  .data-table th {
+    @apply px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider border-b border-border bg-bg;
+  }
+
+  .data-table td {
+    @apply px-4 py-3 text-sm border-b border-border;
+  }
+
+  .data-table tr:hover td {
+    @apply bg-bg;
+  }
+
+  /* Sidebar nav */
+  .sidebar-link {
+    @apply flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors;
+    @apply text-muted hover:bg-bg hover:text-text;
+  }
+
+  .sidebar-link.active {
+    @apply bg-primary/10 text-primary;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    @apply animate-pulse bg-gray-200 rounded;
+  }
+}
+
+@layer utilities {
+  /* Scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.border') transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: theme('colors.border');
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.muted');
+  }
+}

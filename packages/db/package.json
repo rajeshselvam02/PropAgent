@@ -6,6 +6,10 @@
   "scripts": {
     "build": "tsc",
     "migrate": "ts-node src/migrate.ts",
+    "migrate:auth": "ts-node src/auth-migration.ts",
+    "migrate:worker": "ts-node src/worker-migration.ts",
+    "migrate:analytics": "ts-node src/analytics-migration.ts",
+    "migrate:billing": "ts-node src/billing-migration.ts",
     "seed": "ts-node src/seed.ts"
   },
   "dependencies": {
