@@ -16,7 +16,7 @@ interface CleanupData {
  */
 export declare function processCleanupIdempotencyKeys(job: Job<CleanupData>): Promise<{
     success: boolean;
-    deletedCount: any;
+    deletedCount: number | null;
     timestamp: string;
 }>;
 /**
@@ -25,7 +25,7 @@ export declare function processCleanupIdempotencyKeys(job: Job<CleanupData>): Pr
  */
 export declare function processPurgeDLQ(job: Job<CleanupData>): Promise<{
     success: boolean;
-    deletedCount: any;
+    deletedCount: number | null;
     olderThanDays: number;
 }>;
 /**
@@ -34,7 +34,7 @@ export declare function processPurgeDLQ(job: Job<CleanupData>): Promise<{
  */
 export declare function processCleanupInteractions(job: Job<CleanupData>): Promise<{
     success: boolean;
-    deletedCount: any;
+    deletedCount: number | null;
     olderThanDays: number;
 }>;
 /**

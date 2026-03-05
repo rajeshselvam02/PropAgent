@@ -48,14 +48,14 @@ export declare function processOutboxPublish(job: Job<OutboxPublishData>): Promi
  * Poll for unpublished events
  * Called by scheduler
  */
-export declare function pollUnpublishedEvents(limit?: number): Promise<any>;
+export declare function pollUnpublishedEvents(limit?: number): Promise<any[]>;
 /**
  * Get event history for an entity
  */
-export declare function getEntityEvents(entityType: string, entityId: string): Promise<any>;
+export declare function getEntityEvents(entityType: string, entityId: string): Promise<any[]>;
 /**
  * Get events by type for tenant
  */
-export declare function getEventsByType(tenantId: string, eventType: string, limit?: number): Promise<any>;
+export declare function getEventsByType(tenantId: string, eventType: string, limit?: number): Promise<any[]>;
 export {};
 //# sourceMappingURL=outbox.d.ts.map

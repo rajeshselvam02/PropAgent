@@ -209,6 +209,39 @@ async function handlePaymentFailed(invoice) {
     // TODO: Send notification to tenant admin
     console.log(`⚠️ Payment failed for tenant ${sub.tenant_id}, attempt ${attemptCount}`);
 }
+// Handle invoice paid
+async function handleInvoicePaid(invoice) {
+    const customerId = invoice.customer;
+    const subscriptionId = invoice.subscription;
+    const amount = invoice.amount_paid;
+    const currency = invoice.currency;
+    // Get tenant subscription
+    const subResult = await db_1.default.query('SELECT * FROM tenant_subscriptions WHERE stripe_customer_id = $1', [customerId]);
+    if (subResult.rows.length === 0) {
+        console.error('No subscription found for customer:', customerId);
+        return;
+    }
+    const sub = subResult.rows[0];
+    // Store invoice record
+    await db_1.default.query(`
+    INSERT INTO invoices (tenant_id, stripe_invoice_id, subscription_id, amount, currency, status, invoice_url, invoice_pdf, paid_at)
+    VALUES ($1, $2, $3, $4, $5, 'paid', $6, $7, NOW())
+    ON CONFLICT (stripe_invoice_id) DO UPDATE SET
+      status = 'paid',
+      paid_at = NOW()
+  `, [sub.tenant_id, invoice.id, sub.id, amount, currency, invoice.hosted_invoice_url, invoice.invoice_pdf]);
+    // Mark subscription as active (in case it was past_due)
+    await db_1.default.query(`
+    UPDATE tenant_subscriptions SET status = 'active', updated_at = NOW()
+    WHERE stripe_subscription_id = $1 AND status = 'past_due'
+  `, [subscriptionId]);
+    // Log audit
+    await db_1.default.query(`
+    INSERT INTO audit_log (tenant_id, action, entity_type, entity_id, metadata)
+    VALUES ($1, 'payment.succeeded', 'invoice', $2, $3)
+  `, [sub.tenant_id, invoice.id, JSON.stringify({ amount, currency })]);
+    console.log(`✅ Invoice paid for tenant ${sub.tenant_id}: ${amount} ${currency}`);
+}
 // Handle checkout session completed
 async function handleCheckoutCompleted(session) {
     const customerId = session.customer;
@@ -267,6 +300,9 @@ fastify.post('/webhook/stripe', async (req, reply) => {
                 break;
             case 'invoice.payment_failed':
                 await handlePaymentFailed(data);
+                break;
+            case 'invoice.paid':
+                await handleInvoicePaid(data);
                 break;
             case 'checkout.session.completed':
                 await handleCheckoutCompleted(data);

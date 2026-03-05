@@ -29,9 +29,51 @@ const fastify = Fastify({ logger: true });
 // Job queue client (import from worker)
 import { followupsQueue, whatsappQueue, emailQueue, analyticsQueue, outboxQueue } from '@propagent/worker';
 import { JOB_TYPES, QUEUE_NAMES, createOutboxEvent, DOMAIN_EVENTS } from '@propagent/worker';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 
-// Create DB-backed idempotency middleware
-const dbIdempotencyMiddleware = createDbIdempotencyMiddleware(db);
+// Create DB-backed idempotency middleware (sync wrapper)
+const dbIdempotencyMiddleware = async (
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> => {
+  // Only apply to POST requests
+  if (req.method !== 'POST') return;
+  const idempotencyKey = req.headers['idempotency-key'] as string;
+  if (!idempotencyKey) return;
+
+  const tenantId = req.user?.tenant_id || '00000000-0000-0000-0000-000000000001';
+  const bodyHash = require('crypto').createHash('sha256').update(JSON.stringify(req.body || {})).digest('hex');
+
+  try {
+    const existing = await db.query(
+      `SELECT key, body_hash, status_code, response_body FROM idempotency_keys WHERE tenant_id = $1 AND key = $2`,
+      [tenantId, idempotencyKey]
+    );
+
+    if (existing.rows.length > 0) {
+      const entry = existing.rows[0];
+      if (entry.body_hash === bodyHash) {
+        reply.header('X-Idempotent-Replayed', 'true');
+        reply.code(entry.status_code).send(entry.response_body);
+        return;
+      }
+      reply.code(409).send({ error: 'Idempotency key already used with different payload' });
+      return;
+    }
+
+    // Intercept response to store
+    const originalSend = reply.send.bind(reply);
+    (reply as any).send = function(payload: any) {
+      db.query(
+        `INSERT INTO idempotency_keys (tenant_id, key, body_hash, method, path, status_code, response_body) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
+        [tenantId, idempotencyKey, bodyHash, req.method, req.url, reply.statusCode, payload]
+      ).catch(() => {});
+      return originalSend(payload);
+    };
+  } catch (err) {
+    req.log.error({ err }, 'Idempotency check failed');
+  }
+};
 
 // Health check
 fastify.get('/health', async () => ({ status: 'ok', service: 'ingestion' }));

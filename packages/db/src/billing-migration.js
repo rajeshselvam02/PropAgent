@@ -128,7 +128,8 @@ async function seedPlans() {
                 meta_integration: true,
                 custom_integrations: false,
                 priority_support: false,
-                api_access: false
+                api_access: false,
+                data_retention_days: 90
             },
             price_monthly: 15000, // ₹15,000
             display_order: 1
@@ -151,7 +152,8 @@ async function seedPlans() {
                 meta_integration: true,
                 custom_integrations: false,
                 priority_support: false,
-                api_access: true
+                api_access: true,
+                data_retention_days: 365
             },
             price_monthly: 35000, // ₹35,000
             display_order: 2
@@ -174,7 +176,8 @@ async function seedPlans() {
                 meta_integration: true,
                 custom_integrations: true,
                 priority_support: true,
-                api_access: true
+                api_access: true,
+                data_retention_days: -1 // unlimited
             },
             price_monthly: 75000, // ₹75,000
             display_order: 3

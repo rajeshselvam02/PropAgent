@@ -166,6 +166,10 @@ function getLocationQuestion(): string {
 Reply with the number.`;
 }
 
+function getPurposeQuestion(): string {
+    return `Thanks! We have all your preferences recorded. Processing...`;
+}
+
 async function completeQualification(session: QualificationState): Promise<string> {
   // Update lead in database
   const intentClass = session.intentScore >= 70 ? 'hot' : session.intentScore >= 40 ? 'warm' : 'cold';

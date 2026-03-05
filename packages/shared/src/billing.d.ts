@@ -54,7 +54,14 @@ export declare function hasFeatureAccess(tenantId: string, feature: keyof PlanFe
 export declare function checkLeadLimit(req: FastifyRequest, reply: FastifyReply): Promise<void>;
 export declare function checkWhatsAppLimit(req: FastifyRequest, reply: FastifyReply): Promise<void>;
 export declare function requireFeature(feature: keyof PlanFeatures): (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
-export declare function getAvailablePlans(): Promise<any>;
+export declare function getAvailablePlans(): Promise<{
+    id: any;
+    name: any;
+    limits: any;
+    features: any;
+    price_monthly: any;
+    price_display: string;
+}[]>;
 export declare function createCheckoutSession(tenantId: string, planId: string, successUrl: string, cancelUrl: string): Promise<{
     sessionId: string;
     url: string;

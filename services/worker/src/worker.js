@@ -8,6 +8,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.startWorkers = startWorkers;
+exports.startScheduler = startScheduler;
+exports.shutdown = shutdown;
 const bullmq_1 = require("bullmq");
 const dotenv_1 = __importDefault(require("dotenv"));
 const config_1 = require("./config");
@@ -19,6 +22,7 @@ const email_1 = require("./processors/email");
 const analytics_1 = require("./processors/analytics");
 const outbox_1 = require("./processors/outbox");
 const dlq_1 = require("./processors/dlq");
+const maintenance_1 = require("./processors/maintenance");
 dotenv_1.default.config();
 // Worker instances
 const workers = [];
@@ -115,6 +119,18 @@ async function startWorkers() {
         switch (job.name) {
             case config_1.JOB_TYPES.OUTBOX_PUBLISH:
                 return (0, outbox_1.processOutboxPublish)(job);
+            default:
+                throw new Error(`Unknown job type: ${job.name}`);
+        }
+    });
+    // Maintenance queue
+    createWorker(config_1.QUEUE_NAMES.MAINTENANCE, async (job) => {
+        switch (job.name) {
+            case config_1.JOB_TYPES.MAINTENANCE_CLEANUP:
+                return (0, maintenance_1.processFullMaintenance)(job);
+            case config_1.JOB_TYPES.MAINTENANCE_REENCRYPT_PII:
+                // Placeholder for PII re-encryption
+                return { success: true, message: 'PII re-encryption not implemented yet' };
             default:
                 throw new Error(`Unknown job type: ${job.name}`);
         }

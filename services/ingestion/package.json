@@ -6,6 +6,9 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@propagent/db": "*",
+    "@propagent/shared": "*",
+    "@propagent/worker": "*",
     "fastify": "^4.25.2",
     "dotenv": "^16.3.1",
     "ioredis": "^5.3.0"

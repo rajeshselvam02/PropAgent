@@ -79,6 +79,10 @@ export declare function processRemindFollowup(job: Job<RemindFollowupData>): Pro
  * Get overdue follow-ups and create reminder jobs
  * Called periodically by scheduler
  */
-export declare function checkOverdueFollowups(): Promise<any>;
+export declare function checkOverdueFollowups(): Promise<{
+    leadId: any;
+    tenantId: any;
+    followupId: string;
+}[]>;
 export {};
 //# sourceMappingURL=followups.d.ts.map

@@ -85,7 +85,7 @@ function createWorker(queueName: string, processor: (job: Job) => Promise<any>) 
 /**
  * Start all workers
  */
-async function startWorkers() {
+export async function startWorkers() {
   console.log('[worker] Starting workers...');
 
   // Follow-ups queue
@@ -163,7 +163,7 @@ async function startWorkers() {
 /**
  * Scheduler - runs periodic jobs
  */
-async function startScheduler() {
+export async function startScheduler() {
   console.log('[scheduler] Starting scheduler...');
 
   // Check for overdue follow-ups every minute
@@ -226,7 +226,7 @@ async function startScheduler() {
 /**
  * Graceful shutdown
  */
-async function shutdown(signal: string) {
+export async function shutdown(signal: string) {
   console.log(`[worker] Received ${signal}, shutting down...`);
   
   // Close all workers

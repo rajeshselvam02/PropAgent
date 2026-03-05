@@ -26,7 +26,7 @@ export declare function getDLQEntries(tenantId: string, options?: {
     limit?: number;
     offset?: number;
 }): Promise<{
-    entries: any;
+    entries: any[];
     total: number;
 }>;
 /**
@@ -40,7 +40,7 @@ export declare function requeueDLQEntry(dlqId: string, actorUserId: string): Pro
 /**
  * Get DLQ stats for a tenant
  */
-export declare function getDLQStats(tenantId: string): Promise<any>;
+export declare function getDLQStats(tenantId: string): Promise<any[]>;
 /**
  * Purge old DLQ entries (for cleanup job)
  */

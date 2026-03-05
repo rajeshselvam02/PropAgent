@@ -259,7 +259,7 @@ export async function batchVersionCheck(
     [ids, tenantId]
   );
 
-  const versionMap = new Map(result.rows.map(r => [r.id, r.version]));
+  const versionMap = new Map(result.rows.map((r: { id: string; version: number }) => [r.id, r.version]));
 
   for (const update of updates) {
     const currentVersion = versionMap.get(update.id);
