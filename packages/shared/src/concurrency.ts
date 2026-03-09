@@ -259,7 +259,9 @@ export async function batchVersionCheck(
     [ids, tenantId]
   );
 
-  const versionMap = new Map(result.rows.map((r: { id: string; version: number }) => [r.id, r.version]));
+  // The type of `versionMap` is inferred as `Map<string, unknown>` because `r.version` could be `null`.
+  // We need to ensure it's `Map<string, number>` by casting or providing an explicit type.
+  const versionMap = new Map<string, number>(result.rows.map((r: { id: string; version: number }) => [r.id, r.version]));
 
   for (const update of updates) {
     const currentVersion = versionMap.get(update.id);
@@ -267,7 +269,7 @@ export async function batchVersionCheck(
     if (currentVersion === undefined) {
       mismatches.set(update.id, null); // Not found
     } else if (currentVersion !== update.expectedVersion) {
-      mismatches.set(update.id, { currentVersion, expectedVersion: update.expectedVersion });
+      mismatches.set(update.id, { currentVersion: currentVersion as number, expectedVersion: update.expectedVersion });
     }
   }
 
